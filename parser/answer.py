@@ -1,4 +1,4 @@
-class Record:
+class Answer:
     def __init__(self, name: str, record_type: int, record_class: int,
                  ttl: int, data_length: int, data: str):
         self.name = name

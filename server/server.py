@@ -2,6 +2,7 @@ import socket
 import logging
 import sys
 from parser.parser import PackerParser
+from parser.builder import PacketBuilder
 
 
 logger = logging.getLogger('Server')
@@ -18,20 +19,17 @@ try:
         data, addr = sock.recvfrom(1024)
 
         ns_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        ns_sock.connect(('199.7.83.42', 53))  # 199.7.83.42
+        ns_sock.connect(('1.1.1.1', 53))  # 199.7.83.42
         ns_sock.sendall(data)
         answer = ns_sock.recv(1024)
         ns_sock.close()
 
-        sock.sendto(answer, addr)
-
-        (queries, answers,
+        (header, queries, answers,
          authorities, additional) = PackerParser.parse_response(answer)
 
-        print(queries)
-        print(answers)
-        print(authorities)
-        print(additional)
+        response = PacketBuilder.build(header, queries, answers, authorities,
+                                       additional)
+        sock.sendto(response, addr)
 except KeyboardInterrupt:
     logger.info('Stopping the server')
 finally:
