@@ -1,4 +1,6 @@
 import logging
+import os.path
+import pickle
 import socket
 import sys
 from argparse import ArgumentParser
@@ -29,6 +31,12 @@ class DNSServer:
 
         self.ttl = {}
         self.data = {}
+
+        if os.path.isfile('ttl.pickle') and os.path.isfile('data.pickle'):
+            with open('ttl.pickle', 'rb') as f:
+                self.ttl = pickle.loads(f.read())
+            with open('data.pickle', 'rb') as f:
+                self.data = pickle.loads(f.read())
 
     @staticmethod
     def parse_args() -> Tuple[str, int]:
@@ -84,6 +92,10 @@ class DNSServer:
 
         except KeyboardInterrupt:
             self.logger.info('Stopping the server')
+            with open('ttl.pickle', 'wb') as f:
+                f.write(pickle.dumps(self.ttl))
+            with open('data.pickle', 'wb') as f:
+                f.write(pickle.dumps(self.data))
         finally:
             self.sock.close()
 
