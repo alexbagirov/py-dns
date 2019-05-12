@@ -6,32 +6,32 @@ from parser.header import Header
 from parser.query import Query
 
 
-class PackerParser:
+class PacketParser:
     @staticmethod
-    def parse_response(packet: bytes) -> Tuple[Header, List[Query],
-                                               List[Answer], List[Answer],
-                                               List[Answer]]:
-        header = PackerParser.parse_resp_headers(packet)
+    def parse(packet: bytes) -> Tuple[Header, List[Query],
+                                      List[Answer], List[Answer],
+                                      List[Answer]]:
+        header = PacketParser.parse_resp_headers(packet)
         offset = 12
 
         queries = []
         for i in range(header.queries_count):
-            query, offset = PackerParser.parse_query(packet, offset)
+            query, offset = PacketParser.parse_query(packet, offset)
             queries.append(query)
 
         answers = []
         for i in range(header.answers_count):
-            answer, offset = PackerParser.parse_answer(packet, offset)
+            answer, offset = PacketParser.parse_answer(packet, offset)
             answers.append(answer)
 
         authorities = []
         for i in range(header.auth_count):
-            auth, offset = PackerParser.parse_answer(packet, offset)
+            auth, offset = PacketParser.parse_answer(packet, offset)
             authorities.append(auth)
 
         additional = []
         for i in range(header.additional_count):
-            result = PackerParser.parse_answer(packet, offset)
+            result = PacketParser.parse_answer(packet, offset)
             add, offset = result
             if not offset:
                 break
@@ -54,7 +54,7 @@ class PackerParser:
 
     @staticmethod
     def parse_query(packet: bytes, offset: int) -> Tuple[Query, int]:
-        name, offset = PackerParser.parse_name(packet, offset)
+        name, offset = PacketParser.parse_name(packet, offset)
         record_type = struct.unpack_from('>H', packet, offset=offset)[0]
         record_class = struct.unpack_from('>H', packet, offset=offset+2)[0]
         return Query(name, record_type, record_class), offset + 4
@@ -66,7 +66,7 @@ class PackerParser:
         label_length = struct.unpack_from('>B', packet, position)[0]
         if label_length == 192:
             suffix_offset = struct.unpack_from('>H', packet, offset=position)[0] & 16383
-            return PackerParser.parse_name(packet, suffix_offset)[0], position
+            return PacketParser.parse_name(packet, suffix_offset)[0], position
         position += 1
         while label_length:
             name += b''.join(struct.unpack_from(f'>{"c" * label_length}',
@@ -77,7 +77,7 @@ class PackerParser:
             if label_length == 192:
                 suffix_offset = struct.unpack_from('>H', packet, offset=position)[0] & 16383
                 position += 2
-                return name.decode() + PackerParser.parse_name(packet, suffix_offset)[0], position
+                return name.decode() + PacketParser.parse_name(packet, suffix_offset)[0], position
             position += 1
         return name.decode(), position
 
@@ -87,7 +87,7 @@ class PackerParser:
         name_offset = struct.unpack_from('>H', packet, offset=offset)[0] & 16383
         if name_offset == 0:
             return None, None
-        name, _ = PackerParser.parse_name(packet, name_offset)
+        name, _ = PacketParser.parse_name(packet, name_offset)
 
         record_type = struct.unpack_from('>H', packet, offset=offset + 2)[0]
 
@@ -102,7 +102,7 @@ class PackerParser:
                 map(str, [struct.unpack_from('>B', packet, offset=offset + 12 + i)[0]
                     for i in range(data_length)]))
         else:
-            data = PackerParser.parse_name(packet, offset + 12)[0]
+            data = PacketParser.parse_name(packet, offset + 12)[0]
 
         return Answer(name, record_type, record_class, ttl, data_length,
                       data), offset + 12 + data_length

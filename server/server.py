@@ -1,54 +1,93 @@
-import socket
 import logging
+import socket
 import sys
 from argparse import ArgumentParser
-from parser.parser import PackerParser
-from parser.builder import PacketBuilder
+from datetime import datetime, timedelta
+from itertools import chain
+from typing import Tuple, NoReturn, Iterable
+
+from parser import Answer, PacketParser, PacketBuilder
 
 
-logger = logging.getLogger('Server')
-logger.setLevel(logging.DEBUG)
-handler = logging.StreamHandler(sys.stdout)
-logger.addHandler(handler)
+class DNSServer:
+    def __init__(self):
+        self.logger = logging.getLogger('Server')
+        self.logger.setLevel(logging.DEBUG)
+        handler = logging.StreamHandler(sys.stdout)
+        self.logger.addHandler(handler)
 
-parser = ArgumentParser()
-parser.add_argument('-p', '--port', type=int, default=53)
-group = parser.add_mutually_exclusive_group()
-group.add_argument('-i', '--ip', type=str, default='1.1.1.1')
-group.add_argument('--use-authoritative', action='store_true')
+        self.host, self.port = self.parse_args()
 
-args = parser.parse_args()
-if args.use_authoritative:
-    ns_host = '199.7.83.42'
-else:
-    ns_host = args.ip
-port = args.port
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.logger.info(f'Starting the server on port {self.port}')
+        try:
+            self.sock.bind(('127.0.0.1', self.port))
+        except PermissionError:
+            self.logger.error('Permission error when opening socket on port, '
+                              'exiting')
+            exit(0)
 
-sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-logger.info(f'Starting the server on port {port}')
-try:
-    sock.bind(('127.0.0.1', port))
-except PermissionError:
-    logger.error(f'Permission error when opening socket on port, exiting')
-    exit(0)
+        self.ttl = {}
+        self.data = {}
 
-try:
-    while True:
-        data, addr = sock.recvfrom(1024)
+    @staticmethod
+    def parse_args() -> Tuple[str, int]:
+        parser = ArgumentParser()
+        parser.add_argument('-p', '--port', type=int, default=53)
+        group = parser.add_mutually_exclusive_group()
+        group.add_argument('-i', '--ip', type=str, default='1.1.1.1')
+        group.add_argument('--use-authoritative', action='store_true')
 
+        args = parser.parse_args()
+        if args.use_authoritative:
+            host = '199.7.83.42'
+        else:
+            host = args.ip
+        port = args.port
+        return host, port
+
+    def query_nameserver(self, name: str, query: bytes):
         ns_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        ns_sock.connect((ns_host, 53))
-        ns_sock.sendall(data)
+        ns_sock.connect((self.host, 53))
+        ns_sock.sendall(query)
         answer = ns_sock.recv(1024)
         ns_sock.close()
 
         (header, queries, answers,
-         authorities, additional) = PackerParser.parse_response(answer)
+         authorities, additional) = PacketParser.parse(answer)
+        self.ttl[name] = self.calculate_ttl(chain(answers,
+                                                  authorities,
+                                                  additional))
+        self.data[name] = (answers, authorities, additional)
 
-        response = PacketBuilder.build(header, queries, answers, authorities,
-                                       additional)
-        sock.sendto(response, addr)
-except KeyboardInterrupt:
-    logger.info('Stopping the server')
-finally:
-    sock.close()
+    @staticmethod
+    def calculate_ttl(answers: Iterable[Answer]) -> datetime:
+        min_ttl = min(answers, key=lambda f: f.ttl).ttl
+        return datetime.now() + timedelta(seconds=min_ttl)
+
+    def run(self) -> NoReturn:
+        try:
+            while True:
+                query, addr = self.sock.recvfrom(1024)
+
+                header, queries, *other = PacketParser.parse(query)
+                name = queries[0].name
+
+                if name not in self.ttl or (name in self.ttl and
+                                            self.ttl[name] < datetime.now()):
+                    self.query_nameserver(name, query)
+
+                answers, authorities, additional = self.data[name]
+                response = PacketBuilder.build(header, queries, answers,
+                                               authorities, additional)
+                self.sock.sendto(response, addr)
+
+        except KeyboardInterrupt:
+            self.logger.info('Stopping the server')
+        finally:
+            self.sock.close()
+
+
+if __name__ == '__main__':
+    server = DNSServer()
+    server.run()
