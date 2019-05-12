@@ -57,7 +57,11 @@ class DNSServer:
 
     def query_nameserver(self, name: str, query: bytes):
         ns_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        ns_sock.connect((self.host, 53))
+        try:
+            ns_sock.connect((self.host, 53))
+        except socket.gaierror:
+            print('No internet connection')
+            exit(0)
         ns_sock.sendall(query)
         answer = ns_sock.recv(1024)
         ns_sock.close()
@@ -68,7 +72,10 @@ class DNSServer:
 
     @staticmethod
     def calculate_ttl(answers: Iterable[Answer]) -> datetime:
-        min_ttl = min(answers, key=lambda f: f.ttl).ttl
+        try:
+            min_ttl = min(answers, key=lambda f: f.ttl).ttl
+        except ValueError:
+            min_ttl = 0
         return datetime.now() + timedelta(seconds=min_ttl)
 
     def run(self) -> NoReturn:
