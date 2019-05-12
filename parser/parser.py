@@ -32,9 +32,11 @@ class PackerParser:
         additional = []
         for i in range(header.additional_count):
             result = PackerParser.parse_answer(packet, offset)
-            if not result:
-                break
             add, offset = result
+            if not offset:
+                break
+            if not add:
+                continue
             additional.append(add)
 
         return header, queries, answers, authorities, additional
@@ -80,18 +82,20 @@ class PackerParser:
         return name.decode(), position
 
     @staticmethod
-    def parse_answer(packet: bytes, offset: int) -> Optional[Tuple[Answer, int]]:
+    def parse_answer(packet: bytes, offset: int) -> Tuple[Optional[Answer],
+                                                          Optional[int]]:
         name_offset = struct.unpack_from('>H', packet, offset=offset)[0] & 16383
         if name_offset == 0:
-            return None
+            return None, None
         name, _ = PackerParser.parse_name(packet, name_offset)
 
         record_type = struct.unpack_from('>H', packet, offset=offset + 2)[0]
-        if record_type not in (1, 2):
-            return None
+
         record_class = struct.unpack_from('>H', packet, offset=offset + 4)[0]
         ttl = struct.unpack_from('>I', packet, offset=offset + 6)[0]
         data_length = struct.unpack_from('>H', packet, offset=offset + 10)[0]
+        if record_type not in (1, 2):
+            return None, offset + 12 + data_length
 
         if record_type == 1:
             data = '.'.join(
